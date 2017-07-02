@@ -181,6 +181,10 @@ p, h3, .cbp-pgprice, .cbp-pgopttooltip span {
  	border-top: 2px solid #47a3da;;
 }
 
+.plusset {
+	width: 100%;
+}
+
 .cbp-pgoptions > li {
 	width: 50%;
 	height: 100%;
@@ -370,6 +374,10 @@ p, h3, .cbp-pgprice, .cbp-pgopttooltip span {
 	-webkit-transform: scale(1.1);
 	-moz-transform: scale(1.1);
 	transform: scale(1.1);
+}
+
+.cbp-pginfo {
+	border-bottom: 1px;
 }
 
 .cbp-pginfo h3 {
