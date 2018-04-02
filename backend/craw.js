@@ -45,23 +45,47 @@ async function getFavoriteData(page) {
 	var postList = await page.$$('.m-mlist');
 	var lenBeforeLoad = postList.length;
 	var lenAfterLoad = postList.length;
-	while(true) { //page size
-		while(true) { //single page load
-			await page.evaluate(_ => {
-				window.scrollBy(0, document.body.scrollHeight);
-				window.scrollBy(0, document.body.scrollHeight);
-			});
-			await page.waitFor(16000);
-			postList = await page.$$('.m-mlist');
-			lenAfterLoad = postList.length;
-			if(lenAfterLoad == lenBeforeLoad) {
-				console.log(lenAfterLoad);
-				break;
+	while(true) { //single page load
+		await page.evaluate(_ => {
+			var mList = document.querySelectorAll('.m-mlist');
+			mList[mList.length-1].scrollIntoView();
+			mList[mList.length-1].scrollIntoView();
+		});
+		await page.waitFor(16000);
+		postList = await page.$$('.m-mlist');
+		lenAfterLoad = postList.length;
+		if(lenAfterLoad == lenBeforeLoad) {
+			console.log(lenAfterLoad);
+			break;
+		} else {
+			lenBeforeLoad = lenAfterLoad;
+		}
+	}
+	if(lenAfterLoad == 100) {
+		var page = await page.$('.scrollList');
+		if(page == null) {
+			const errorStatus = "系统繁忙，请稍后再试\n";
+			var endStatus = await page.$('.m-end')
+			if(endStatus && endStatus.innerText == errorStatus) {
+				console.log(endStatus.innerText);
 			} else {
-				lenBeforeLoad = lenAfterLoad;
+				await page.evaluate(_ => {
+					window.scrollBy(0, document.body.scrollHeight);
+				});
+				page.screenshot({path: 'err.png'});
+			}
+		} else {
+			var pageCount = page.children.length;
+			var pageSelectorPre = '#pagerwidget > div > div > div.ui-3277803181.js-scrollList > div > div.scrollList.ztag > div:nth-child(';
+			for(var i = 2; i <= pageCount; i++) {
+				var pageSelector = pageSelectorPre + i + ')';
+				await page.click(pageSelector);
+				await page.waitFor(8000);
+				var newPostList = await page.$$('.m-mlist');
+				console.log(newPostList.length);
+				postList = postList.concat(newPostList);
 			}
 		}
-		break;
 	}
 }
 
