@@ -63,14 +63,31 @@ class Lofter(object):
 		result=[self.escape(x) for x in result.findAll('p')]
 		return '\n'.join(result)
 	
-	def multiArticleDownload(self, url):
+	def multiArticleDownload(self, url, keyWord=None):
 		self.getAllArticles(url)
 		authorKeys = self.keyJoined(url)
 		returnList = {"author": authorKeys[0], "articles": {}}
-		authorList = self.articleList[authorKeys[0]]
-		for articleLink in authorList:
-			joinedTitle = authorList[articleLink][0] + " |" + authorList[articleLink][1]
+		authorArticles = self.articleList[authorKeys[0]]
+		for articleLink in authorArticles:
+			if len(authorArticles[articleLink][0]) == 0:
+				joinedTitle = "(无题)" + " -" + authorArticles[articleLink][1]
+			else:
+				joinedTitle = authorArticles[articleLink][0] + " -" + authorArticles[articleLink][1]
 			returnList["articles"][joinedTitle] = articleLink
+		if keyWord:
+			returnList["selected"] = []
+			titles = list(returnList["articles"].keys())
+			for titleItem in titles:
+				if keyWord in titleItem[:-21]:
+					returnList["selected"].append(titleItem)
+			if len(returnList["selected"]) == 0:
+				None
+			else:
+				returnList["title"] = returnList["selected"][0][:-21]
+				for i in range(1, len(returnList["selected"])):
+					titleItem = returnList["selected"][i][:-21]
+					returnList["title"] = longestCommonSubstring(returnList["title"], titleItem)
+		print(returnList["title"])
 		return returnList
 	
 	def blogIdAndTotal(self, viewUrl):
@@ -131,8 +148,7 @@ class Lofter(object):
 					timeItem = tmpList[number]['time']
 					exertItem = tmpList[number]['exert']
 					self.articleList[authorKeys[0]][linkItem] = [titleItem, timeItem, exertItem]
-			pprint(self.articleList)
-	
+
 	def selectedArticleDownload(self, selectedData):
 		finalContent = ""
 		authorName = selectedData['author']
@@ -145,9 +161,10 @@ class Lofter(object):
 			finalContent = finalContent + title + '\n' + description + '\n'
 		return finalContent
 	
-	def checkKeyWordExist(self, keyWord):
-		for title in self.titleList:
-			if keyWord in title:
+	def checkKeyWordExist(self, keyWord, authorName):
+		authorArticles = self.articleList[authorName]
+		for link in authorArticles:
+			if keyWord in authorArticles[link][0]:
 				return True
 		return False
 	
@@ -167,5 +184,4 @@ class Lofter(object):
 		return keys
 
 lofter = Lofter()
-ss = lofter.multiArticleDownload('http://asgardfirenze.lofter.com/post/1d400d0e_12ca27c4')
-print(ss)
+ss = lofter.multiArticleDownload('http://woyongyuanaixiaoweishi.lofter.com/post/1e763e07_ee7118a0', '山颓')
