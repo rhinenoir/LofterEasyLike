@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 from pprint import pprint
 from xml.etree.ElementTree import parse
 from datetime import datetime
+from pprint import pprint
 import urllib.request, re, requests, random, math, time
 
 def longestCommonSubstring(s1, s2):
@@ -37,8 +38,8 @@ class Lofter(object):
 		self.contentRegex = 's([0-9]+)\.content="(.*?)";';
 	
 	def escape(self, content):
-		content=content.getText()
-		content=content.replace("&nbsp;","")
+		content = content.getText()
+		content = content.replace("&nbsp;","")
 		return content
 	
 	def download(self, url):
@@ -62,7 +63,7 @@ class Lofter(object):
 			print('error url: ' + url)
 			return None
 		result = [self.escape(x) for x in result.findAll('p')]
-		return [title, title + '\n' + '\n'.join(result)]
+		return [title, title + "\n" + "\n".join(result)]
 	
 	def multiArticleDownload(self, authorName, keyWord=None):
 		self.getAllArticles(authorName)
@@ -80,6 +81,7 @@ class Lofter(object):
 				for singleKey in keyWord:
 					if singleKey not in titleItem[:-21]:
 						del returnList[titleItem]
+						break
 		return returnList
 	
 	def blogIdAndTotal(self, viewUrl):
@@ -144,13 +146,21 @@ class Lofter(object):
 		finalContent = ""
 		authorName = selectedData['author']
 		selectedList = selectedData['target']
+		if authorName not in self.articleList:
+			self.getAllArticles(authorName)
 		authorArticles = self.articleList[authorName]
-		content, title = "", authorArticles[selectedList[0]][0]
+		content, title, skipCount = "", authorArticles[selectedList[0]][0], 0
+		for link in selectedList:
+			if link not in authorArticles:
+				skipCount = skipCount + 1
+				selectedList.remove(link)
+				continue
+		selectedList = sorted(selectedList, key = lambda link:authorArticles[link][1])
 		for link in selectedList:
 			url = "http://" + authorName + ".lofter.com/post/" + link
-			content = content + '\n' + self.download(url)[1]
-			title = longestCommonSubstring(title, authorArticles[link][0]),
-		return [title, content]
+			content = content + self.download(url)[1] + "\n"
+			title = longestCommonSubstring(title, authorArticles[link][0])
+		return {"title": title, "content": content, "skip": skipCount}
 	
 	def checkKeyWordExist(self, keyWord, authorName):
 		authorArticles = self.articleList[authorName]
