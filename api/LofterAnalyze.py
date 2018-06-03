@@ -4,7 +4,7 @@ from pprint import pprint
 from xml.etree.ElementTree import parse
 from datetime import datetime
 from pprint import pprint
-import urllib.request, re, requests, random, math, time
+import urllib.request, re, requests, random, math, time, redis
 
 def longestCommonSubstring(s1, s2):
 	len1, len2, maxLen = len(s1), len(s2), 0
@@ -31,6 +31,7 @@ def longestCommonSubstring(s1, s2):
 
 class Lofter(object):
 	def __init__(self):
+		self.redisCache = redis.StrictRedis(host='localhost', port=6379, db=0)
 		self.articleList = {}
 		self.timeRegex = 's([0-9]+)\.time=([0-9]+?);'
 		self.titleRegex = 's([0-9]+)\.title="(.*?)";'
@@ -68,7 +69,8 @@ class Lofter(object):
 	def multiArticleDownload(self, authorName, keyWord=None):
 		self.getAllArticles(authorName)
 		returnList = {}
-		authorArticles = self.articleList[authorName]
+		# authorArticles = self.articleList[authorName]
+		authorArticles = eval(self.redisCache.get(authorName))
 		for articleLink in authorArticles:
 			if len(authorArticles[articleLink][0]) == 0:
 				joinedTitle = "(无题)" + " -" + authorArticles[articleLink][1]
@@ -78,10 +80,13 @@ class Lofter(object):
 		if keyWord and len(keyWord.strip()) != 0:
 			titles = list(returnList.keys())
 			for titleItem in titles:
+				titleForCheck = titleItem[:-21]
 				for singleKey in keyWord:
-					if singleKey not in titleItem[:-21]:
+					if singleKey not in titleForCheck:
 						del returnList[titleItem]
 						break
+					else:
+						titleForCheck = titleForCheck[titleForCheck.index(singleKey) + 1:]
 		return returnList
 	
 	def blogIdAndTotal(self, viewUrl):
@@ -125,7 +130,8 @@ class Lofter(object):
 			titleOfArticles = re.findall(self.titleRegex, content)
 			linkOfArticles = re.findall(self.linkRegex, content)
 			exertOfArticles = re.findall(self.contentRegex, content)
-			self.articleList[authorName] = {}
+			# self.articleList[authorName] = {}
+			singleArticleList = {}
 			for number, link in linkOfArticles:
 				tmpList[number] = {'link': link}
 			for number, title in titleOfArticles:
@@ -140,22 +146,30 @@ class Lofter(object):
 					titleItem = tmpList[number]['title']
 					timeItem = tmpList[number]['time']
 					exertItem = tmpList[number]['exert']
-					self.articleList[authorName][linkItem] = [titleItem, timeItem, exertItem]
+					# self.articleList[authorName][linkItem] = [titleItem, timeItem, exertItem]
+					singleArticleList[linkItem] = [titleItem, timeItem, exertItem]
+			self.redisCache.set(authorName, singleArticleList, ex = 60 * 60 * 24)
 
 	def selectedArticlesDownload(self, selectedData):
 		finalContent = ""
 		authorName = selectedData['author']
 		selectedList = selectedData['target']
-		if authorName not in self.articleList:
+		# if authorName not in self.articleList:
+		# 	self.getAllArticles(authorName)
+		# authorArticles = self.articleList[authorName]
+		if not self.redisCache.exists(authorName):
 			self.getAllArticles(authorName)
-		authorArticles = self.articleList[authorName]
-		content, title, skipCount = "", authorArticles[selectedList[0]][0], 0
+		authorArticles = eval(self.redisCache.get(authorName))
+		skipCount, tmpSelectedList = 0, []
 		for link in selectedList:
-			if link not in authorArticles:
+			if link in authorArticles:
+				tmpSelectedList.append(link)
+			else:
 				skipCount = skipCount + 1
-				selectedList.remove(link)
-				continue
-		selectedList = sorted(selectedList, key = lambda link:authorArticles[link][1])
+		selectedList = sorted(tmpSelectedList, key = lambda link:authorArticles[link][1])
+		if len(selectedList) == 0:
+			return {"skip": skipCount}
+		content, title = "", authorArticles[selectedList[0]][0]
 		for link in selectedList:
 			url = "http://" + authorName + ".lofter.com/post/" + link
 			content = content + self.download(url)[1] + "\n"
@@ -163,7 +177,8 @@ class Lofter(object):
 		return {"title": title, "content": content, "skip": skipCount}
 	
 	def checkKeyWordExist(self, keyWord, authorName):
-		authorArticles = self.articleList[authorName]
+		# authorArticles = self.articleList[authorName]
+		authorArticles = eval(self.redisCache.get(authorName))
 		for link in authorArticles:
 			if keyWord in authorArticles[link][0]:
 				return True

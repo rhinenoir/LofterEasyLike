@@ -4,6 +4,7 @@ import json
 
 app = Flask(__name__)
 lofter = Lofter()
+r = redis.StrictRedis(host='localhost', port=6379, db=0)
 
 @app.route('/api/v1.0/lofter/download/<path:author_link>', methods=['GET', 'POST'])
 def downloadArticles(author_link):
