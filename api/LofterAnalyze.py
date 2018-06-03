@@ -45,6 +45,7 @@ class Lofter(object):
 		page = urllib.request.urlopen(url)
 		content = page.read()
 		prettyContent = BeautifulSoup(content, 'html.parser')
+		title = prettyContent.title.text
 		typeFirst = prettyContent.findAll("div",{"class":"text"})
 		typeSecond = prettyContent.findAll("div",{"class":"txtcont"})
 		typeThird = prettyContent.findAll("div",{"class":"post-ctc box"})
@@ -60,33 +61,25 @@ class Lofter(object):
 		else:
 			print('error url: ' + url)
 			return None
-		result=[self.escape(x) for x in result.findAll('p')]
-		return '\n'.join(result)
+		result = [self.escape(x) for x in result.findAll('p')]
+		return [title, title + '\n' + '\n'.join(result)]
 	
-	def multiArticleDownload(self, url, keyWord=None):
-		self.getAllArticles(url)
-		authorKeys = self.keyJoined(url)
-		returnList = {"author": authorKeys[0], "articles": {}}
-		authorArticles = self.articleList[authorKeys[0]]
+	def multiArticleDownload(self, authorName, keyWord=None):
+		self.getAllArticles(authorName)
+		returnList = {}
+		authorArticles = self.articleList[authorName]
 		for articleLink in authorArticles:
 			if len(authorArticles[articleLink][0]) == 0:
 				joinedTitle = "(无题)" + " -" + authorArticles[articleLink][1]
 			else:
 				joinedTitle = authorArticles[articleLink][0] + " -" + authorArticles[articleLink][1]
-			returnList["articles"][joinedTitle] = articleLink
-		if keyWord:
-			returnList["selected"] = []
-			titles = list(returnList["articles"].keys())
+			returnList[joinedTitle] = articleLink
+		if keyWord and len(keyWord.strip()) != 0:
+			titles = list(returnList.keys())
 			for titleItem in titles:
-				if keyWord in titleItem[:-21]:
-					returnList["selected"].append(titleItem)
-			if len(returnList["selected"]) == 0:
-				None
-			else:
-				returnList["title"] = returnList["selected"][0][:-21]
-				for i in range(1, len(returnList["selected"])):
-					titleItem = returnList["selected"][i][:-21]
-					returnList["title"] = longestCommonSubstring(returnList["title"], titleItem)
+				for singleKey in keyWord:
+					if singleKey not in titleItem[:-21]:
+						del returnList[titleItem]
 		return returnList
 	
 	def blogIdAndTotal(self, viewUrl):
@@ -99,24 +92,23 @@ class Lofter(object):
 		div:nth-of-type(1) > div > div.txt > a.ztag.currt > span")[0].text
 		return [blogId, total]
 	
-	def getAllArticles(self, url):
-		authorKeys = self.keyJoined(url)
-		viewUrl = "http://" + authorKeys[0] + ".lofter.com/view"
-		dwrUrl = 'http://'+ authorKeys[0] +'.lofter.com/dwr/call/plaincall/ArchiveBean.getArchivePostByTime.dwr'
+	def getAllArticles(self, authorName):
+		viewUrl = "http://" + authorName + ".lofter.com/view"
+		dwrUrl = 'http://'+ authorName +'.lofter.com/dwr/call/plaincall/ArchiveBean.getArchivePostByTime.dwr'
 		blogId, total = self.blogIdAndTotal(viewUrl)
 		batchId, timestamp = random.randrange(100000,999999), math.floor(time.time() * 1000)
 		data = "callCount=1\nscriptSessionId=${scriptSessionId}187\nhttpSessionId=\nc0-scriptName=ArchiveBean\nc0-methodName=getArchivePostByTime\nc0-id=0\nc0-param0=number:" + blogId + "\nc0-param1=number:" + str(timestamp) + "\nc0-param2=number:" + total + "\nc0-param3=boolean:false\nbatchId=" + str(batchId)
-		headers = {'Host':authorKeys[0] + '.lofter.com', 
+		headers = {'Host':authorName + '.lofter.com', 
 		'Proxy-Connection':'keep-alive', 
 		'Pragma':'no-cache', 
 		'Cache-Control':'no-cache', 
-		'Origin':'http://' + authorKeys[0] +'.lofter.com', 
+		'Origin':'http://' + authorName +'.lofter.com', 
 		'User-Agent':'Mozilla/5.0 (Windows NT 6.2; Win64; x64) \
 		AppleWebKit/537.36 (KHTML, like Gecko) \
 		Chrome/66.0.3359.139 Safari/537.36', 
 		'Content-Type':'text/plain', 
 		'Accept':'*/*', 
-		'Referer':'http://' + authorKeys[0] + '.lofter.com/view', 
+		'Referer':'http://' + authorName + '.lofter.com/view', 
 		'Accept-Encoding':'gzip, deflate', 
 		'Accept-Language':'zh-CN,zh;q=0.9,en;q=0.8'}
 		total = int(total)
@@ -131,7 +123,7 @@ class Lofter(object):
 			titleOfArticles = re.findall(self.titleRegex, content)
 			linkOfArticles = re.findall(self.linkRegex, content)
 			exertOfArticles = re.findall(self.contentRegex, content)
-			self.articleList[authorKeys[0]] = {}
+			self.articleList[authorName] = {}
 			for number, link in linkOfArticles:
 				tmpList[number] = {'link': link}
 			for number, title in titleOfArticles:
@@ -146,19 +138,19 @@ class Lofter(object):
 					titleItem = tmpList[number]['title']
 					timeItem = tmpList[number]['time']
 					exertItem = tmpList[number]['exert']
-					self.articleList[authorKeys[0]][linkItem] = [titleItem, timeItem, exertItem]
+					self.articleList[authorName][linkItem] = [titleItem, timeItem, exertItem]
 
-	def selectedArticleDownload(self, selectedData):
+	def selectedArticlesDownload(self, selectedData):
 		finalContent = ""
 		authorName = selectedData['author']
 		selectedList = selectedData['target']
 		authorArticles = self.articleList[authorName]
+		content, title = "", authorArticles[selectedList[0]][0]
 		for link in selectedList:
-			if link in authorArticles:
-				description = authorArticles[link][2]
-				title = authorArticles = authorArticles[link][0]
-			finalContent = finalContent + title + '\n' + description + '\n'
-		return finalContent
+			url = "http://" + authorName + ".lofter.com/post/" + link
+			content = content + '\n' + self.download(url)[1]
+			title = longestCommonSubstring(title, authorArticles[link][0]),
+		return [title, content]
 	
 	def checkKeyWordExist(self, keyWord, authorName):
 		authorArticles = self.articleList[authorName]
@@ -166,17 +158,6 @@ class Lofter(object):
 			if keyWord in authorArticles[link][0]:
 				return True
 		return False
-	
-	def multiChapterDownload(self, selectedData):
-		authorName = selectedData['author']
-		finalContent = ""
-		authorArticles = self.articleList[authorName]
-		chapters = selectedData['target']
-		for link in chapters:
-			title = authorArticles[link][0]
-			description = authorArticles[link][2]
-			finalContent = finalContent + title + '\n' + description + '\n'
-		return finalContent
 	
 	def keyJoined(self, url):
 		keys = re.search('http[s]*://(.+).lofter.com/(post/)*(.*)',url).groups()
