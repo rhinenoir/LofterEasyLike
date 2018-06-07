@@ -3,7 +3,6 @@ from bs4 import BeautifulSoup
 from pprint import pprint
 from xml.etree.ElementTree import parse
 from datetime import datetime
-from pprint import pprint
 import urllib.request, re, requests, random, math, time, redis
 
 def longestCommonSubstring(s1, s2):
@@ -30,13 +29,18 @@ def longestCommonSubstring(s1, s2):
 		return ""
 
 class Lofter(object):
-	def __init__(self):
-		self.redisCache = redis.StrictRedis(host='localhost', port=6379, db=0)
+	def __init__(self, redisUrl):
+		self.redisCache = redis.from_url(redisUrl)
 		self.articleList = {}
+		self.limitOnce = 200
 		self.timeRegex = 's([0-9]+)\.time=([0-9]+?);'
 		self.titleRegex = 's([0-9]+)\.title="(.*?)";'
 		self.linkRegex = 's([0-9]+)\.permalink="(.+?)";'
 		self.contentRegex = 's([0-9]+)\.content="(.*?)";';
+		self.likeBlogNickName = 's([0-9]+)\.blogName="(.+?)";(.*?)s([0-9]+)\.blogNickName="(.+?)";'
+		self.likeBlogPageUrl = 's[0-9]+\.blogPageUrl="http:(.+?)\.lofter.com/post/(.+?)";'
+		self.likeTagList = 's([0-9]+?)\.tagList=s([0-9]+?);'
+		self.likeTagCapture = 's([0-9]+?)\[([0-9]+?)\]="(.+?)";'
 	
 	def escape(self, content):
 		content = content.getText()
@@ -109,7 +113,6 @@ class Lofter(object):
 		'Proxy-Connection':'keep-alive', 
 		'Pragma':'no-cache', 
 		'Cache-Control':'no-cache', 
-		'Origin':'http://' + authorName +'.lofter.com', 
 		'User-Agent':'Mozilla/5.0 (Windows NT 6.2; Win64; x64) \
 		AppleWebKit/537.36 (KHTML, like Gecko) \
 		Chrome/66.0.3359.139 Safari/537.36', 
@@ -187,3 +190,36 @@ class Lofter(object):
 	def keyJoined(self, url):
 		keys = re.search('http[s]*://(.+).lofter.com/(post/)*(.*)',url).groups()
 		return keys
+
+	def likeGet(self, userId):
+		total, batchId = 0, random.randrange(100000,999999)
+		dwrUrl = 'http://www.lofter.com/dwr/call/plaincall/BlogBean.queryLikePosts.dwr'
+		headers = {'Host':'www.lofter.com', 
+		'Proxy-Connection':'keep-alive', 
+		'Pragma':'no-cache', 
+		'Cache-Control':'no-cache', 
+		'Origin':'http://www.lofter.com'
+		'User-Agent':'Mozilla/5.0 (Windows NT 6.2; Win64; x64) \
+		AppleWebKit/537.36 (KHTML, like Gecko) \
+		Chrome/66.0.3359.139 Safari/537.36', 
+		'Content-Type':'text/plain', 
+		'Accept':'*/*', 
+		'Referer':'http://www.lofter.com/favblog/' + userId, 
+		'Accept-Encoding':'gzip, deflate', 
+		'Accept-Language':'zh-CN,zh;q=0.9,en;q=0.8'}
+		dataStart = "callCount=1\nscriptSessionId=${scriptSessionId}187\nhttpSessionId=\nc0-scriptName=BlogBean\nc0-methodName=queryLikePosts\nc0-id=0\nc0-param0=number:" + blogId + "\nc0-param1=number:" + str(self.limitOnce) + "\nc0-param2=number:"
+		dataEnd = "\nc0-param3=string:\nbatchId=" + str(batchId)
+		data = dataStart + str(total) + dataEnd
+		res = requests.post(url=dwrUrl, headers=headers, data=data)
+		if res.status_code != 200:
+			print('dwr error:', res.status_code)
+			return None
+		else:
+			content = res.content.decode('unicode_escape')
+			nickNameList = re.findall(self.likeBlogNickName, content)
+			pageUrl = re.findall(self.likeBlogPageUrl, content)
+			pageTagList = re.findall(self.likeTagList, content)
+
+
+
+
