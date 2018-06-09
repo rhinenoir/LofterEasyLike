@@ -1,9 +1,8 @@
 # -*- coding:utf-8 -*-
 from bs4 import BeautifulSoup
 from pprint import pprint
-from xml.etree.ElementTree import parse
 from datetime import datetime
-import urllib.request, re, requests, random, math, time, redis
+import urllib.request, re, requests, random, math, time, redis, os
 
 def longestCommonSubstring(s1, s2):
 	len1, len2, maxLen = len(s1), len(s2), 0
@@ -30,17 +29,19 @@ def longestCommonSubstring(s1, s2):
 
 class Lofter(object):
 	def __init__(self, redisUrl):
-		self.redisCache = redis.from_url(redisUrl)
+		# self.redisCache = redis.from_url(redisUrl)
 		self.articleList = {}
-		self.limitOnce = 200
+		self.limitOnce = 300
 		self.timeRegex = 's([0-9]+)\.time=([0-9]+?);'
 		self.titleRegex = 's([0-9]+)\.title="(.*?)";'
 		self.linkRegex = 's([0-9]+)\.permalink="(.+?)";'
 		self.contentRegex = 's([0-9]+)\.content="(.*?)";';
-		self.likeBlogNickName = 's([0-9]+)\.blogName="(.+?)";(.*?)s([0-9]+)\.blogNickName="(.+?)";'
-		self.likeBlogPageUrl = 's[0-9]+\.blogPageUrl="http:(.+?)\.lofter.com/post/(.+?)";'
-		self.likeTagList = 's([0-9]+?)\.tagList=s([0-9]+?);'
-		self.likeTagCapture = 's([0-9]+?)\[([0-9]+?)\]="(.+?)";'
+		self.likePublishTime = 's([0-9]+)\.publishTime=([0-9]+?);'
+		self.likeBlogNickName = 's([0-9]+)\.blogName="(.+?)";.*?s([0-9]+)\.blogNickName="(.+?)";'
+		self.likeBlogPageUrl = 's([0-9]+)\.blogPageUrl="http://(.+?)\.lofter.com/post/(.+?)";'
+		self.likePageTagMap = 's([0-9]+?)\.tagList=s([0-9]+?);'
+		self.likeTagList = 's([0-9]+?)\[([0-9]+?)\]="(.+?)";'
+		self.likePostHot = 's([0-9]+)\.postHot=(.*?);'
 	
 	def escape(self, content):
 		content = content.getText()
@@ -191,14 +192,49 @@ class Lofter(object):
 		keys = re.search('http[s]*://(.+).lofter.com/(post/)*(.*)',url).groups()
 		return keys
 
+	def analyzeLikeData(self, content):
+		pageUrl = re.findall(self.likeBlogPageUrl, content)
+		pageTagMap = re.findall(self.likePageTagMap, content)
+		pageTagList = re.findall(self.likeTagList, content)
+		pageHotPot = re.findall(self.likePostHot, content)
+		titleList = re.findall(self.titleRegex, content)
+		nickNameList = re.findall(self.likeBlogNickName, content)
+		timeList = re.findall(self.likePublishTime, content)
+		tagListArchive, finalData, tmpNameToId, tmpHotPots, linkCount = {}, {}, {}, {}, len(pageUrl)
+		print(len(pageUrl), len(pageTagMap), len(pageTagList), len(pageHotPot), len(titleList), len(nickNameList), len(timeList))
+		for item in nickNameList:
+			tmpNameToId[item[1]] = item[3]
+		for i in range(0, linkCount):
+			item, postHotItem = pageUrl[i], int(pageHotPot[i][1])
+			uIndex, authorId, url = item
+			finalData[uIndex] = {'_id': url, 'blog': authorId, 'author': tmpNameToId[authorId]}
+			finalData[uIndex]['hot'] = postHotItem
+		for item in pageTagList:
+			tIndex, tName = item[0], item[2]
+			if tIndex not in tagListArchive:
+				tagListArchive[tIndex] = [tName]
+			else:
+				tagListArchive[tIndex].append(tName)
+		for item in pageTagMap:
+			key, value = item
+			if key in finalData and value in tagListArchive:
+				finalData[key]['tags'] = tagListArchive[value]
+		for item in titleList:
+			tIndex, titleItem = item
+			if tIndex in finalData:
+				finalData[tIndex]['title'] = titleItem
+		for item in timeList:
+			finalData[item[0]]['time'] = int(item[1])
+		return [finalData, linkCount]
+
 	def likeGet(self, userId):
-		total, batchId = 0, random.randrange(100000,999999)
-		dwrUrl = 'http://www.lofter.com/dwr/call/plaincall/BlogBean.queryLikePosts.dwr'
+		total, batchId, dwrUrl = 0, random.randrange(100000,999999), 'http://www.lofter.com/dwr/call/plaincall/BlogBean.queryLikePosts.dwr'
+		blogId = self.blogIdAndTotal('http://' + userId + '.lofter.com/view')[0]
 		headers = {'Host':'www.lofter.com', 
 		'Proxy-Connection':'keep-alive', 
 		'Pragma':'no-cache', 
 		'Cache-Control':'no-cache', 
-		'Origin':'http://www.lofter.com'
+		'Origin':'http://www.lofter.com',
 		'User-Agent':'Mozilla/5.0 (Windows NT 6.2; Win64; x64) \
 		AppleWebKit/537.36 (KHTML, like Gecko) \
 		Chrome/66.0.3359.139 Safari/537.36', 
@@ -209,17 +245,21 @@ class Lofter(object):
 		'Accept-Language':'zh-CN,zh;q=0.9,en;q=0.8'}
 		dataStart = "callCount=1\nscriptSessionId=${scriptSessionId}187\nhttpSessionId=\nc0-scriptName=BlogBean\nc0-methodName=queryLikePosts\nc0-id=0\nc0-param0=number:" + blogId + "\nc0-param1=number:" + str(self.limitOnce) + "\nc0-param2=number:"
 		dataEnd = "\nc0-param3=string:\nbatchId=" + str(batchId)
-		data = dataStart + str(total) + dataEnd
-		res = requests.post(url=dwrUrl, headers=headers, data=data)
-		if res.status_code != 200:
-			print('dwr error:', res.status_code)
-			return None
-		else:
-			content = res.content.decode('unicode_escape')
-			nickNameList = re.findall(self.likeBlogNickName, content)
-			pageUrl = re.findall(self.likeBlogPageUrl, content)
-			pageTagList = re.findall(self.likeTagList, content)
-
-
-
-
+		finalData = []
+		while True:
+			data = dataStart + str(total) + dataEnd
+			res = requests.post(url=dwrUrl, headers=headers, data=data)
+			if res.status_code != 200:
+				print('dwr error:', res.status_code)
+				return None
+			else:
+				content = res.content.decode('unicode_escape')
+				oneTurnData, linkCount = self.analyzeLikeData(content)
+				finalData = finalData + list(oneTurnData.values())
+			total = total + linkCount
+			print(linkCount, total)
+			if linkCount == 0:
+				break
+			
+lofter = Lofter('redis://localhost:6379')
+lofter.likeGet('itisduya')
